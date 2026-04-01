@@ -1,0 +1,11 @@
+## Interface: 120001, 120005
+## Title: Bestiary Tracker
+## Notes: Records creature kills and IDs for your future Bestiary.
+## Author: Oswaldovzki
+## Version: 0.0.1
+## SavedVariablesPerCharacter: BestiaryKillsDB
+## Category-enUS: Collection
+
+BestiaryTracker.lua
+
+

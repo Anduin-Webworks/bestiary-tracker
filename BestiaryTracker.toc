@@ -6,5 +6,5 @@
 ## SavedVariablesPerCharacter: BestiaryKillsDB
 ## Category-enUS: Collection
 
+BestiaryUI.lua
 BestiaryTracker.lua
-BestiaryTrackerUI.lua

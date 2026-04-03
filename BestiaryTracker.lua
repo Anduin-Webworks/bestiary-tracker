@@ -1,77 +1,83 @@
 local addonName, addonTable = ...
-local frame = CreateFrame("Frame", "BestiaryTrackerFrame")
+local frame = CreateFrame("Frame")
 
--- Helper: Safely get a name/ID for a unit
--- In 12.0, we use Tooltip Data because raw GUIDs are "Secret"
-local function GetUnitInfo(unit)
-    local name = UnitName(unit)
-    if not name then return nil, nil end
-    
-    -- Attempt to get NPC ID via Tooltip (Midnight workaround)
-    local npcID = "Unknown"
-    local tooltipData = C_TooltipInfo.GetUnit(unit)
-    if tooltipData and tooltipData.guid then
-        -- We pcall this because string-ops on Secret GUIDs can crash 12.0.5+
-        pcall(function()
-            local _, _, _, _, _, id = strsplit("-", tooltipData.guid)
-            npcID = id
-        end)
-    end
-    
-    return name, npcID
-end
+local function RecordKill(creatureName)
+    if not creatureName or creatureName == "" then return end
 
-local function RecordKill(name, npcID)
-    if not name then return end
-    npcID = npcID or "Unknown"
+    -- Initialize Database if it doesn't exist
+    BestiaryKillsDB = BestiaryKillsDB or {}
     
-    if not BestiaryKillsDB[npcID] then
-        BestiaryKillsDB[npcID] = {
-            name = name,
+    -- Name is our unique key
+    if not BestiaryKillsDB[creatureName] then
+        BestiaryKillsDB[creatureName] = {
+            name = creatureName,
             count = 0,
             firstKilled = date("%Y-%m-%d"),
-            zone = GetRealZoneText()
+            zone = GetRealZoneText() or "Unknown"
         }
     end
     
-    BestiaryKillsDB[npcID].count = BestiaryKillsDB[npcID].count + 1
-    BestiaryKillsDB[npcID].lastKilled = date("%Y-%m-%d %H:%M:%S")
+    BestiaryKillsDB[creatureName].count = BestiaryKillsDB[creatureName].count + 1
+    BestiaryKillsDB[creatureName].lastKilled = date("%Y-%m-%d %H:%M:%S")
     
-    -- UI Feedback
-    print(string.format("|cFFBBFF00[Bestiary]|r Recorded kill: %s (Total: %d)", name, BestiaryKillsDB[npcID].count))
+    -- Print confirmation to your chat
+    print(string.format("|cFFBBFF00[Bestiary]|r Recorded: %s (Total: %d)", creatureName, BestiaryKillsDB[creatureName].count))
+    
+    -- Refresh UI if it's open
+    if BestiaryFrame and BestiaryFrame:IsShown() then
+        BestiaryFrame:Refresh()
+    end
 end
 
 -- Event Handling
 frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("NAME_PLATE_UNIT_REMOVED") -- Fired when a unit dies/is out of range
-frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
-        if ... == addonName then
+        local loadedAddon = ...
+        if loadedAddon == addonName then
             BestiaryKillsDB = BestiaryKillsDB or {}
-            print("|cFF00FF00Bestiary Tracker Initialized.|r (Midnight API)")
+            print("|cFF00FF00Bestiary Tracker Loaded!|r Type /bt display to open")
         end
 
-    elseif event == "NAME_PLATE_UNIT_REMOVED" then
-        local unit = ...
-        -- If it was a hostile creature and it's now dead
-        if UnitExists(unit) and UnitIsDead(unit) and not UnitIsPlayer(unit) then
-            local name, npcID = GetUnitInfo(unit)
-            RecordKill(name, npcID)
+    elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" then
+        local msg = ...
+        if msg then
+            -- These patterns cover different locales and variations
+            -- "You have slain X!"
+            -- "You killed X."
+            -- Remove any color codes first
+            local cleanMsg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            
+            local name = cleanMsg:match("^You have slain (.+)!$") or 
+                        cleanMsg:match("^You killed (.+)%.$") or
+                        cleanMsg:match("^(.+) dies%.$")  -- Sometimes it's just "X dies."
+            
+            if name then
+                RecordKill(name)
+            end
         end
     end
 end)
 
--- Manual Slash Command for current target
+-- Slash Command
 SLASH_BESTIARY1 = "/bt"
-SlashCmdList["BESTIARY"] = function()
-    local name, npcID = GetUnitInfo("target")
-    if name and BestiaryKillsDB[npcID] then
-        print(string.format("Kills for %s: %d", name, BestiaryKillsDB[npcID].count))
-    elseif name then
-        print("No records for " .. name)
+SLASH_BESTIARY2 = "/bestiary"
+SlashCmdList["BESTIARY"] = function(msg)
+    msg = msg:lower():trim()
+    
+    if msg == "display" or msg == "" then
+        addonTable.CreateBestiaryUI()
+    elseif msg == "reset" then
+        BestiaryKillsDB = {}
+        print("|cFFFFFF00[Bestiary]|r Kill database reset!")
+        if BestiaryFrame and BestiaryFrame:IsShown() then
+            BestiaryFrame:Refresh()
+        end
     else
-        print("Target something first!")
+        print("|cFFFFFF00Bestiary Tracker Commands:|r")
+        print("  /bt display - Open kill tracker window")
+        print("  /bt reset - Clear all kill data")
     end
 end
